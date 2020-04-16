@@ -125,4 +125,12 @@ trait MongoInputConfig extends MongoCompanionConfig {
    */
   val registerSQLHelperFunctions = "registerSQLHelperFunctions".toLowerCase()
 
+  /**
+   * Runs schema inference on full data
+   *
+   *
+   * @since 1.1
+   */
+  val fullDataSchemaInference = "fullDataSchemaInference".toLowerCase()
+
 }
