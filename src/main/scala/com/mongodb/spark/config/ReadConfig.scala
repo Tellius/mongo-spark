@@ -68,7 +68,8 @@ object ReadConfig extends MongoInputConfig with LoggingTrait {
       registerSQLHelperFunctions = getBoolean(
         cleanedOptions.get(registerSQLHelperFunctions),
         default.map(conf => conf.registerSQLHelperFunctions), DefaultRegisterSQLHelperFunctions
-      )
+      ),
+      fullDataSchemaInference = getBoolean(cleanedOptions.get(fullDataSchemaInference), default.map(conf => conf.fullDataSchemaInference), false)
     )
   }
 
@@ -91,9 +92,9 @@ object ReadConfig extends MongoInputConfig with LoggingTrait {
    */
   def create(databaseName: String, collectionName: String, connectionString: String, sampleSize: Int,
              partitioner: String, partitionerOptions: util.Map[String, String], localThreshold: Int, readPreference: ReadPreference,
-             readConcern: ReadConcern): ReadConfig = {
+             readConcern: ReadConcern, fullDataSchemaInference: Boolean): ReadConfig = {
     create(databaseName, collectionName, connectionString, sampleSize, partitioner, partitionerOptions, localThreshold, readPreference,
-      readConcern, DefaultRegisterSQLHelperFunctions)
+      readConcern, DefaultRegisterSQLHelperFunctions, fullDataSchemaInference)
   }
 
   /**
@@ -114,7 +115,8 @@ object ReadConfig extends MongoInputConfig with LoggingTrait {
    */
   def create(databaseName: String, collectionName: String, connectionString: String, sampleSize: Int,
              partitioner: String, partitionerOptions: util.Map[String, String], localThreshold: Int,
-             readPreference: ReadPreference, readConcern: ReadConcern, registerHelperFunctions: Boolean): ReadConfig = {
+             readPreference: ReadPreference, readConcern: ReadConcern, registerHelperFunctions: Boolean,
+             fullDataSchemaInference: Boolean): ReadConfig = {
     notNull("databaseName", databaseName)
     notNull("collectionName", collectionName)
     notNull("partitioner", partitioner)
@@ -124,7 +126,7 @@ object ReadConfig extends MongoInputConfig with LoggingTrait {
 
     new ReadConfig(databaseName, collectionName, Option(connectionString), sampleSize, getPartitioner(partitioner),
       getPartitionerOptions(partitionerOptions.asScala), localThreshold, ReadPreferenceConfig(readPreference),
-      ReadConcernConfig(readConcern), registerHelperFunctions)
+      ReadConcernConfig(readConcern), registerHelperFunctions, fullDataSchemaInference)
   }
 
   // scalastyle:on parameter.number
@@ -216,7 +218,8 @@ case class ReadConfig(
     localThreshold:             Int                            = MongoSharedConfig.DefaultLocalThreshold,
     readPreferenceConfig:       ReadPreferenceConfig           = ReadPreferenceConfig(),
     readConcernConfig:          ReadConcernConfig              = ReadConcernConfig(),
-    registerSQLHelperFunctions: Boolean                        = ReadConfig.DefaultRegisterSQLHelperFunctions
+    registerSQLHelperFunctions: Boolean                        = ReadConfig.DefaultRegisterSQLHelperFunctions,
+    fullDataSchemaInference:    Boolean                        = false
 ) extends MongoCollectionConfig with MongoClassConfig {
   require(Try(connectionString.map(uri => new ConnectionString(uri))).isSuccess, s"Invalid uri: '${connectionString.get}'")
   require(sampleSize > 0, s"sampleSize ($sampleSize) must be greater than 0")
@@ -234,7 +237,8 @@ case class ReadConfig(
       ReadConfig.collectionNameProperty -> collectionName,
       ReadConfig.sampleSizeProperty -> sampleSize.toString,
       ReadConfig.partitionerProperty -> partitioner.getClass.getName,
-      ReadConfig.localThresholdProperty -> localThreshold.toString
+      ReadConfig.localThresholdProperty -> localThreshold.toString,
+      ReadConfig.fullDataSchemaInference -> fullDataSchemaInference.toString
     ) ++ partitionerOptions.map(kv => (s"${ReadConfig.partitionerOptionsProperty}.${kv._1}".toLowerCase, kv._2)) ++
       readPreferenceConfig.asOptions ++ readConcernConfig.asOptions
 

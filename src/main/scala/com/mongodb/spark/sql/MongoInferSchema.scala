@@ -59,21 +59,25 @@ object MongoInferSchema extends Logging {
    * @return the schema for the collection
    */
   def apply(mongoRDD: MongoRDD[BsonDocument]): StructType = {
-    val singlePartitionRDD = mongoRDD.copy(readConfig = mongoRDD.readConfig.copy(partitioner = MongoSinglePartitioner))
-    val sampleData: MongoRDD[BsonDocument] = singlePartitionRDD.hasSampleAggregateOperator match {
-      case true => singlePartitionRDD.appendPipeline(Seq(Aggregates.sample(mongoRDD.readConfig.sampleSize)))
-      case false =>
-        val samplePool: Int = 10000
-        val sampleSize: Int = if (singlePartitionRDD.readConfig.sampleSize > samplePool) samplePool else singlePartitionRDD.readConfig.sampleSize
-        val sampleData: Seq[BsonDocument] = singlePartitionRDD.appendPipeline(Seq(
-          Aggregates.project(Projections.include("_id")), Aggregates.sort(Sorts.descending("_id")), Aggregates.limit(samplePool)
-        )).takeSample(withReplacement = false, num = sampleSize).toSeq
-        Try(sampleData.map(_.get("_id")).asJava) match {
-          case Success(_ids) => singlePartitionRDD.appendPipeline(Seq(Aggregates.`match`(Filters.in("_id", _ids))))
-          case Failure(_) =>
-            throw new IllegalArgumentException("The RDD must contain documents that include an '_id' key to infer data when using MongoDB < 3.2")
+    val sampleData: MongoRDD[BsonDocument] =
+      if (mongoRDD.readConfig.fullDataSchemaInference) mongoRDD
+      else {
+        val singlePartitionRDD = mongoRDD.copy(readConfig = mongoRDD.readConfig.copy(partitioner = MongoSinglePartitioner))
+        singlePartitionRDD.hasSampleAggregateOperator match {
+          case true => singlePartitionRDD.appendPipeline(Seq(Aggregates.sample(mongoRDD.readConfig.sampleSize)))
+          case false =>
+            val samplePool: Int = 10000
+            val sampleSize: Int = if (singlePartitionRDD.readConfig.sampleSize > samplePool) samplePool else singlePartitionRDD.readConfig.sampleSize
+            val sampleData: Seq[BsonDocument] = singlePartitionRDD.appendPipeline(Seq(
+              Aggregates.project(Projections.include("_id")), Aggregates.sort(Sorts.descending("_id")), Aggregates.limit(samplePool)
+            )).takeSample(withReplacement = false, num = sampleSize).toSeq
+            Try(sampleData.map(_.get("_id")).asJava) match {
+              case Success(_ids) => singlePartitionRDD.appendPipeline(Seq(Aggregates.`match`(Filters.in("_id", _ids))))
+              case Failure(_) =>
+                throw new IllegalArgumentException("The RDD must contain documents that include an '_id' key to infer data when using MongoDB < 3.2")
+            }
         }
-    }
+      }
     // perform schema inference on each row and merge afterwards
     val rootType: DataType = sampleData.map(getSchemaFromDocument).treeAggregate[DataType](StructType(Seq()))(compatibleType, compatibleType)
     canonicalizeType(rootType) match {
